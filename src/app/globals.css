@@ -10,3 +10,161 @@
     padding-bottom: env(safe-area-inset-bottom);
   }
 }
+
+/* Atmospheric Night Lake World */
+body {
+  background: radial-gradient(circle at 50% 10%, #0e1c2e 0%, #080f1a 50%, #03060a 100%);
+  background-attachment: fixed;
+  color: #f8fafc;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  overflow-x: hidden;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Natural Organic Lake Containers */
+.lake-left-shape {
+  border-radius: 62% 38% 56% 44% / 46% 58% 42% 54%;
+}
+
+.lake-right-shape {
+  border-radius: 45% 55% 42% 58% / 56% 44% 56% 44%;
+}
+
+/* Natural Shoreline Rim with River Pebbles Effect */
+.lake-shoreline {
+  position: absolute;
+  inset: -12px;
+  border-radius: inherit;
+  background: 
+    radial-gradient(ellipse at 50% 50%, transparent 66%, rgba(30, 41, 59, 0.4) 69%, rgba(15, 23, 42, 0.95) 73%, rgba(8, 12, 18, 0.98) 100%);
+  box-shadow: 
+    0 30px 70px -10px rgba(0, 0, 0, 0.95),
+    inset 0 0 25px rgba(0, 0, 0, 0.9),
+    0 0 0 2px rgba(255, 255, 255, 0.05);
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* Shallow Water Shore Ring */
+.shallow-water-lip {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Left Lake: Mystic Crimson Pond (Qırmızı Nilufərlər Gölü) */
+.pond-crimson {
+  background: 
+    radial-gradient(circle at 35% 30%, rgba(225, 29, 72, 0.22) 0%, transparent 55%),
+    radial-gradient(circle at 70% 70%, rgba(159, 18, 57, 0.25) 0%, transparent 50%),
+    linear-gradient(135deg, #101c2a 0%, #150917 40%, #1f0512 80%, #0f0208 100%);
+  box-shadow: 
+    inset 0 16px 45px rgba(0, 0, 0, 0.9),
+    inset 0 -12px 35px rgba(225, 29, 72, 0.25),
+    0 25px 60px rgba(0, 0, 0, 0.85),
+    0 0 80px rgba(225, 29, 72, 0.12);
+}
+
+.pond-crimson .shallow-water-lip {
+  box-shadow: inset 0 0 20px rgba(244, 63, 94, 0.15), inset 0 0 6px rgba(253, 164, 175, 0.1);
+}
+
+/* Right Lake: Emerald Serenity Pond (Zümrüd Sükunət Gölü) */
+.pond-emerald {
+  background: 
+    radial-gradient(circle at 35% 30%, rgba(16, 185, 129, 0.22) 0%, transparent 55%),
+    radial-gradient(circle at 70% 70%, rgba(5, 150, 105, 0.25) 0%, transparent 50%),
+    linear-gradient(135deg, #091e24 0%, #03241d 40%, #022018 80%, #01120d 100%);
+  box-shadow: 
+    inset 0 16px 45px rgba(0, 0, 0, 0.9),
+    inset 0 -12px 35px rgba(16, 185, 129, 0.25),
+    0 25px 60px rgba(0, 0, 0, 0.85),
+    0 0 80px rgba(16, 185, 129, 0.12);
+}
+
+.pond-emerald .shallow-water-lip {
+  box-shadow: inset 0 0 20px rgba(52, 211, 153, 0.18), inset 0 0 6px rgba(110, 231, 183, 0.12);
+}
+
+/* Dynamic Sun/Moon Refraction Caustics */
+.water-caustics-layer {
+  position: absolute;
+  inset: -10%;
+  width: 120%;
+  height: 120%;
+  background: 
+    radial-gradient(ellipse at 30% 25%, rgba(255, 255, 255, 0.08) 0%, transparent 35%),
+    radial-gradient(ellipse at 70% 65%, rgba(255, 255, 255, 0.06) 0%, transparent 40%),
+    conic-gradient(from 45deg at 50% 50%, 
+      transparent 0deg, 
+      rgba(255, 255, 255, 0.04) 45deg, 
+      transparent 90deg, 
+      rgba(255, 255, 255, 0.05) 180deg, 
+      transparent 270deg, 
+      rgba(255, 255, 255, 0.03) 360deg);
+  animation: water-caustic-drift 26s ease-in-out infinite alternate;
+  pointer-events: none;
+  z-index: 1;
+}
+
+@keyframes water-caustic-drift {
+  0% { transform: scale(1) rotate(0deg); opacity: 0.7; }
+  50% { transform: scale(1.08) rotate(4deg); opacity: 0.95; }
+  100% { transform: scale(1.02) rotate(-3deg); opacity: 0.8; }
+}
+
+/* Natural Water Surface Ripples */
+.water-surface-ripple {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 86%;
+  height: 86%;
+  transform: translate(-50%, -50%);
+  border-radius: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 35px rgba(255, 255, 255, 0.03);
+  animation: surface-wave 9s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 2;
+}
+
+@keyframes surface-wave {
+  0%, 100% { transform: translate(-50%, -50%) scale(0.94); opacity: 0.3; }
+  50% { transform: translate(-50%, -50%) scale(1.05); opacity: 0.7; }
+}
+
+/* Ambient Bioluminescent Floating Sparkles */
+.firefly {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  pointer-events: none;
+  animation: firefly-float 8s ease-in-out infinite;
+}
+
+@keyframes firefly-float {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.2; }
+  25% { transform: translate(12px, -18px) scale(1.4); opacity: 0.9; }
+  50% { transform: translate(-10px, -30px) scale(1); opacity: 0.4; }
+  75% { transform: translate(-18px, -12px) scale(1.6); opacity: 0.85; }
+}
+
+/* Custom Scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
