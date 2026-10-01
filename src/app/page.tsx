@@ -17,7 +17,10 @@ type Task = {
 };
 
 // Lake Geometry Constants
+export const dynamic = "force-dynamic";
+
 const LAKE_INTERNAL_RADIUS = 152;
+const APP_PIN = process.env.NEXT_PUBLIC_APP_PIN || "1234";
 
 // Deterministic hash for natural floating frequency and delay
 function getTaskHash(id: string): number {
@@ -312,7 +315,7 @@ export default function Home() {
   // Handle PIN Unlock
   const handlePinSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (pin === process.env.NEXT_PUBLIC_APP_PIN) {
+    if (pin === APP_PIN) {
       localStorage.setItem("is_unlocked", "true");
       setIsUnlocked(true);
       setPinError(false);
