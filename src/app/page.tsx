@@ -315,6 +315,27 @@ export default function Home() {
     };
   }, [isUnlocked]);
 
+  // 3. Check existing push subscription
+  useEffect(() => {
+    if (!isUnlocked) return;
+    const checkSubscription = async () => {
+      if ('serviceWorker' in navigator && 'PushManager' in window) {
+        try {
+          const registration = await navigator.serviceWorker.getRegistration();
+          if (registration) {
+            const subscription = await registration.pushManager.getSubscription();
+            if (subscription) {
+              setIsSubscribed(true);
+            }
+          }
+        } catch (e) {
+          console.error("Failed to check subscription", e);
+        }
+      }
+    };
+    checkSubscription();
+  }, [isUnlocked]);
+
   // Handle PIN Unlock
   const handlePinSubmit = (e: FormEvent) => {
     e.preventDefault();
