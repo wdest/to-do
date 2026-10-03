@@ -34,7 +34,7 @@ export async function POST(req: Request) {
     const payload = JSON.stringify({
       title: title || 'Xatırlatma!',
       body: body || 'Tapşırığınızın vaxtıdır.',
-      icon: '/favicon.ico'
+      icon: '/bell-icon.jpg'
     });
 
     const sendPromises = subs.map(sub => 
@@ -77,7 +77,7 @@ export async function GET() {
         const payload = JSON.stringify({
           title: 'Vaxt Tamamdır! ⏰',
           body: task.title,
-          icon: '/favicon.ico'
+          icon: '/bell-icon.jpg'
         });
         
         const sendPromises = subs.map(sub => 
