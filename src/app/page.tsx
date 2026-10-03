@@ -823,7 +823,7 @@ export default function Home() {
               transition={{ type: "spring", stiffness: 220, damping: 22 }}
               onClick={(e) => e.stopPropagation()}
               onSubmit={addTask}
-              className="max-w-md w-full rounded-3xl p-6 md:p-8 shadow-2xl relative border bg-slate-950/90 border-rose-500/30 shadow-[0_0_60px_rgba(225,29,72,0.2)]"
+              className="max-w-md w-full rounded-3xl p-6 md:p-8 shadow-2xl relative border bg-slate-950/90 border-rose-500/30 shadow-[0_0_60px_rgba(225,29,72,0.2)] overflow-hidden"
             >
               {/* Header Close */}
               <div className="flex items-center justify-between mb-6">
@@ -864,7 +864,7 @@ export default function Home() {
                     type="datetime-local"
                     value={newTaskReminder}
                     onChange={(e) => setNewTaskReminder(e.target.value)}
-                    className="w-full bg-black/40 border border-white/10 focus:border-rose-500/50 rounded-2xl pl-12 pr-5 py-3 text-white focus:outline-none transition-colors font-light"
+                    className="w-full max-w-full min-w-0 appearance-none bg-black/40 border border-white/10 focus:border-rose-500/50 rounded-2xl pl-12 pr-4 py-3 text-white focus:outline-none transition-colors font-light"
                     style={{ colorScheme: "dark" }}
                   />
                 </div>
