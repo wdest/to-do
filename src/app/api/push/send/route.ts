@@ -49,3 +49,50 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
   }
 }
+
+export async function GET() {
+  try {
+    const now = new Date().toISOString();
+    
+    const { data: dueTasks, error: taskError } = await supabase
+      .from('tasks')
+      .select('*')
+      .eq('is_done', false)
+      .not('reminder_at', 'is', null)
+      .lte('reminder_at', now);
+      
+    if (taskError) throw taskError;
+    if (!dueTasks || dueTasks.length === 0) {
+       return NextResponse.json({ message: 'Gözləyən xatırlatma yoxdur.' });
+    }
+    
+    const { data: subs, error: subError } = await supabase
+      .from('push_subscriptions')
+      .select('subscription');
+      
+    if (subError) throw subError;
+    
+    if (subs && subs.length > 0) {
+      for (const task of dueTasks) {
+        const payload = JSON.stringify({
+          title: 'Vaxt Tamamdır! ⏰',
+          body: task.title,
+          icon: '/favicon.ico'
+        });
+        
+        const sendPromises = subs.map(sub => 
+          webpush.sendNotification(sub.subscription, payload).catch(e => console.error(e))
+        );
+        await Promise.all(sendPromises);
+        
+        // Clear reminder so it doesn't trigger again
+        await supabase.from('tasks').update({ reminder_at: null }).eq('id', task.id);
+      }
+    }
+    
+    return NextResponse.json({ success: true, message: `Sent ${dueTasks.length} reminders.` });
+  } catch (err) {
+    console.error('Error in push cron:', err);
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
+  }
+}
