@@ -4,7 +4,7 @@ import { useEffect, useState, FormEvent, useRef, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import { 
   Plus, Check, Trash2, X, Lock, 
-  RotateCcw, Calendar, Clock 
+  RotateCcw, Calendar, Clock, Bell 
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -14,6 +14,7 @@ type Task = {
   is_done: boolean;
   created_at: string;
   completed_at: string | null;
+  reminder_at?: string | null;
 };
 
 // Lake Geometry Constants
@@ -232,6 +233,7 @@ const BotanicalLilyPad = ({ size, isDone, ageDays, title, seed }: LilyPadProps) 
 export default function Home() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [newTaskReminder, setNewTaskReminder] = useState("");
   const [isAdding, setIsAdding] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [clickRipple, setClickRipple] = useState<{ x: number; y: number } | null>(null);
@@ -240,6 +242,7 @@ export default function Home() {
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [pin, setPin] = useState("");
   const [pinError, setPinError] = useState(false);
+  const [isSubscribed, setIsSubscribed] = useState(false);
   
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -325,12 +328,64 @@ export default function Home() {
     }
   };
 
+  // Push Notifications Logic
+  const subscribeToPush = async () => {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      alert('Bildirişlər bu brauzerdə dəstəklənmir.');
+      return;
+    }
+
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        alert('Bildirişlərə icazə verilmədi!');
+        return;
+      }
+
+      const registration = await navigator.serviceWorker.register('/sw.js');
+      const publicVapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || 'BEIKHqXfgpvYc_wwyVTG2eJpCWkNm8q2AWw_zFppy8PFJDDeq-ZfCvaUn4M02_CFVBfSSt32anUcxO2gBb2Eudk';
+
+      // Convert VAPID key to Uint8Array
+      const padding = '='.repeat((4 - publicVapidKey.length % 4) % 4);
+      const base64 = (publicVapidKey + padding).replace(/-/g, '+').replace(/_/g, '/');
+      const rawData = window.atob(base64);
+      const outputArray = new Uint8Array(rawData.length);
+      for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+      }
+
+      let subscription = await registration.pushManager.getSubscription();
+      if (subscription) {
+        await subscription.unsubscribe();
+      }
+
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: outputArray
+      });
+
+      await fetch('/api/push/subscribe', {
+        method: 'POST',
+        body: JSON.stringify(subscription),
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      setIsSubscribed(true);
+      alert('Bildirişlər aktivləşdirildi! Tətbiq bağlı olanda da xatırlatma alacaqsınız.');
+    } catch (err: any) {
+      console.error('Push error', err);
+      alert('Bildiriş aktivləşdirilərkən xəta baş verdi: ' + err.message);
+    }
+  };
+
   // Add Task
   const addTask = async (e?: FormEvent) => {
     if (e) e.preventDefault();
     if (!newTaskTitle.trim()) return;
     const title = newTaskTitle.trim();
+    const reminder = newTaskReminder.trim() ? new Date(newTaskReminder).toISOString() : null;
     setNewTaskTitle("");
+    setNewTaskReminder("");
     setIsAdding(false);
 
     const tempId = crypto.randomUUID();
@@ -340,13 +395,14 @@ export default function Home() {
       is_done: false,
       created_at: new Date().toISOString(),
       completed_at: null,
+      reminder_at: reminder,
     };
     
     setTasks((prev) => [newTask, ...prev]);
 
     const { data, error } = await supabase
       .from("tasks")
-      .insert([{ title, is_done: false }])
+      .insert([{ title, is_done: false, reminder_at: reminder }])
       .select()
       .single();
 
@@ -517,59 +573,35 @@ export default function Home() {
       <div className="firefly bg-cyan-200 bottom-[20%] left-[30%] shadow-[0_0_10px_#a5f3fc]" />
 
       {/* MINIMAL TOP ACTION BAR */}
-      <header className="flex items-center justify-end mb-4 px-3 z-30 min-h-[48px]">
-        <AnimatePresence mode="wait">
-          {!isAdding ? (
-            <motion.button
-              key="add-btn"
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              whileHover={{ scale: 1.08 }}
-              whileTap={{ scale: 0.92 }}
-              onClick={() => {
-                setIsAdding(true);
-                setTimeout(() => inputRef.current?.focus(), 100);
-              }}
-              className="p-3 bg-white/5 hover:bg-white/10 text-rose-300 rounded-full border border-white/10 shadow-[0_0_20px_rgba(0,0,0,0.4)] backdrop-blur-md transition-all"
-              title="Yeni tapşırıq"
-            >
-              <Plus size={20} />
-            </motion.button>
-          ) : (
-            <motion.form
-              key="add-form"
-              initial={{ opacity: 0, width: 0 }}
-              animate={{ opacity: 1, width: "auto" }}
-              exit={{ opacity: 0, width: 0 }}
-              onSubmit={addTask}
-              className="flex items-center gap-2 bg-slate-900/90 border border-white/10 rounded-full p-1.5 pl-4 shadow-[0_0_25px_rgba(0,0,0,0.6)] backdrop-blur-xl"
-            >
-              <input
-                ref={inputRef}
-                type="text"
-                value={newTaskTitle}
-                onChange={(e) => setNewTaskTitle(e.target.value)}
-                placeholder="Yazın..."
-                className="bg-transparent text-white placeholder:text-white/30 focus:outline-none w-48 md:w-72 text-sm font-light"
-              />
-              <button
-                type="button"
-                onClick={() => setIsAdding(false)}
-                className="p-1.5 text-white/40 hover:text-white transition-colors rounded-full"
-              >
-                <X size={16} />
-              </button>
-              <button
-                type="submit"
-                disabled={!newTaskTitle.trim()}
-                className="p-1.5 bg-rose-500/40 text-rose-100 rounded-full hover:bg-rose-500/60 transition-colors disabled:opacity-20"
-              >
-                <Check size={16} />
-              </button>
-            </motion.form>
-          )}
-        </AnimatePresence>
+      <header className="flex items-center justify-end mb-4 px-3 z-30 min-h-[48px] gap-3">
+        <motion.button
+          key="push-btn"
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          whileHover={{ scale: 1.08 }}
+          whileTap={{ scale: 0.92 }}
+          onClick={subscribeToPush}
+          className={`p-3 rounded-full border shadow-[0_0_20px_rgba(0,0,0,0.4)] backdrop-blur-md transition-all ${isSubscribed ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300' : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-300'}`}
+          title="Bildirişləri aktivləşdir"
+        >
+          <Bell size={20} />
+        </motion.button>
+
+        <motion.button
+          key="add-btn"
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          whileHover={{ scale: 1.08 }}
+          whileTap={{ scale: 0.92 }}
+          onClick={() => {
+            setIsAdding(true);
+            setTimeout(() => inputRef.current?.focus(), 100);
+          }}
+          className="p-3 bg-white/5 hover:bg-white/10 text-rose-300 rounded-full border border-white/10 shadow-[0_0_20px_rgba(0,0,0,0.4)] backdrop-blur-md transition-all"
+          title="Yeni tapşırıq"
+        >
+          <Plus size={20} />
+        </motion.button>
       </header>
 
       {/* TWO NATURAL LAKES MAIN STAGE */}
@@ -774,6 +806,85 @@ export default function Home() {
 
       </div>
 
+      {/* ADD TASK MODAL */}
+      <AnimatePresence>
+        {isAdding && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4"
+            onClick={() => setIsAdding(false)}
+          >
+            <motion.form
+              initial={{ scale: 0.9, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 15 }}
+              transition={{ type: "spring", stiffness: 220, damping: 22 }}
+              onClick={(e) => e.stopPropagation()}
+              onSubmit={addTask}
+              className="max-w-md w-full rounded-3xl p-6 md:p-8 shadow-2xl relative border bg-slate-950/90 border-rose-500/30 shadow-[0_0_60px_rgba(225,29,72,0.2)]"
+            >
+              {/* Header Close */}
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl md:text-2xl font-light text-rose-100">
+                  Yeni Tapşırıq
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setIsAdding(false)}
+                  className="p-1.5 text-slate-400 hover:text-white rounded-full bg-white/5 hover:bg-white/10 transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Input */}
+              <div className="mb-6">
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={newTaskTitle}
+                  onChange={(e) => setNewTaskTitle(e.target.value)}
+                  placeholder="Tapşırığı bura yazın..."
+                  className="w-full bg-black/40 border border-white/10 focus:border-rose-500/50 rounded-2xl px-5 py-4 text-white placeholder:text-white/30 focus:outline-none transition-colors font-light text-lg"
+                />
+              </div>
+
+              {/* Reminder Input */}
+              <div className="mb-8">
+                <label className="block text-sm text-slate-400 mb-2 font-light">
+                  Xatırlatma Vaxtı (Seçimlidir)
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                    <Bell size={18} className="text-slate-500" />
+                  </div>
+                  <input
+                    type="datetime-local"
+                    value={newTaskReminder}
+                    onChange={(e) => setNewTaskReminder(e.target.value)}
+                    className="w-full bg-black/40 border border-white/10 focus:border-rose-500/50 rounded-2xl pl-12 pr-5 py-3 text-white focus:outline-none transition-colors font-light"
+                    style={{ colorScheme: "dark" }}
+                  />
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  disabled={!newTaskTitle.trim()}
+                  className="px-6 py-3 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-2xl shadow-[0_0_20px_rgba(225,29,72,0.3)] transition-all flex items-center gap-2 text-sm font-semibold"
+                >
+                  <Check size={18} strokeWidth={2.5} /> Əlavə et
+                </button>
+              </div>
+            </motion.form>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* DETAILED INSPECTION MODAL */}
       <AnimatePresence>
         {selectedTask && (
@@ -826,6 +937,13 @@ export default function Home() {
                   <div className="flex items-center gap-2 text-emerald-300/80">
                     <Clock size={14} />
                     <span>{new Date(selectedTask.completed_at).toLocaleString("az-AZ")}</span>
+                  </div>
+                )}
+
+                {selectedTask.reminder_at && (
+                  <div className="flex items-center gap-2 text-rose-300/80">
+                    <Bell size={14} />
+                    <span>{new Date(selectedTask.reminder_at).toLocaleString("az-AZ")}</span>
                   </div>
                 )}
               </div>
