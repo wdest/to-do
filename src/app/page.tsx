@@ -372,9 +372,9 @@ export default function Home() {
 
       setIsSubscribed(true);
       alert('Bildirişlər aktivləşdirildi! Tətbiq bağlı olanda da xatırlatma alacaqsınız.');
-    } catch (err: any) {
+    } catch (err) {
       console.error('Push error', err);
-      alert('Bildiriş aktivləşdirilərkən xəta baş verdi: ' + err.message);
+      alert('Bildiriş aktivləşdirilərkən xəta baş verdi: ' + (err instanceof Error ? err.message : 'Bilinməyən xəta'));
     }
   };
 
