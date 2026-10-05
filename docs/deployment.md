@@ -8,15 +8,15 @@ Back up the existing database. In the Supabase SQL Editor (database owner role),
 
 The migration is transactional and rerunnable. It removes previous policies on the two application tables, enables RLS, revokes anonymous privileges, adds ownership, indexes, server timestamps, 500-task/5-device limits and per-user write throttles. Both direct REST and application requests are covered. Old tasks without a verified owner remain invisible to users, not deleted. Old device subscriptions are never assigned automatically.
 
-Create an account for `qasimzade.1806@gmail.com` through the app and verify the email. Run `supabase/claim-legacy-tasks.sql` to bind unowned tasks to that account if it did not exist when the migration ran. Never give the first registrant legacy ownership. Account deletion cascades owned tasks/subscriptions.
+Sign in through Google as `qasimzade.1806@gmail.com`, then run `supabase/claim-legacy-tasks.sql` to bind the preserved unowned tasks to that verified account. Never give the first registrant legacy ownership. Account deletion cascades owned tasks/subscriptions.
 
 ## 2. Auth
 
-Enable the Supabase email/password provider and email confirmation. Set the minimum password length to 12 to match the UI. Set Site URL to the exact production origin and allow that origin as an auth redirect (plus localhost only for development). Configure production SMTP; Supabase's default email service is for testing and has restrictive recipient/rate limits. Configure Auth rate limits and bot protection appropriate to launch traffic; task write limits do not protect registration endpoints.
+Only Google sign-in is supported. Disable Supabase's Email provider; the app has no email/password login, password reset or confirmation flow, so SMTP is not needed. Configure Auth rate limits and bot protection appropriate to launch traffic; task write limits do not protect Google account creation.
 
-The login UI implements Google OAuth, email signup, confirmation redirect, password login, password reset, recovery password update and logout. Google still needs its provider activation: create a Web OAuth client in Google Cloud and add its Client ID and Secret to Supabase. Add `https://mind.desttex.me` as a Google JavaScript origin, and the Supabase Auth callback URL shown in provider settings as a Google authorized redirect URI. Allow `https://mind.desttex.me` under Supabase Auth URL Configuration. Google needs only the standard `openid`, `email`, and `profile` scopes. Supabase automatically links an OAuth identity with the same verified email, allowing the nominated Gmail account to claim its legacy tasks. Passwords are handled by Supabase Auth, not by the application's database.
+The login UI uses Google OAuth and session restore. A Web OAuth client in Google Cloud is configured for the app, and its Client ID and Secret must be set in Supabase. The Google client uses `https://mind.desttex.me` as its JavaScript origin and the Supabase Auth callback URL as its authorized redirect URI. Supabase Site URL and redirect allowlist must include `https://mind.desttex.me`. Google receives only the standard `openid`, `email`, and `profile` scopes. OAuth identities with the same verified email can link to an existing Supabase account, but legacy task ownership must still be assigned using the migration's explicit claim script.
 
-This is a client-rendered application using the Supabase JS SDK's session/token refresh and implicit email redirect handling. It does not render private data server-side. Every push subscription API request verifies the bearer token with `auth.getUser`; database operations run under that user's JWT and RLS. Do not use the service-role client for ordinary user requests. A future SSR conversion needs a separate cookie/PKCE integration.
+This is a client-rendered application using the Supabase JS SDK's OAuth redirect, session restore and token refresh. It does not render private data server-side. Every push subscription API request verifies the bearer token with `auth.getUser`; database operations run under that user's JWT and RLS. Do not use the service-role client for ordinary user requests. A future SSR conversion needs a separate cookie/PKCE integration.
 
 ## 3. Environment and keys
 
@@ -38,7 +38,7 @@ Delivery is at-least-once: a process crash after a provider accepts the push but
 
 Run `npm test`, `npm run lint`, `npm run build`, and `npm audit --omit=dev`. The DB suite runs the actual SQL migration twice in PGlite PostgreSQL, with Supabase Auth roles/helpers represented locally. It verifies anonymous denial, two-user isolation, forged ownership, server timestamps, write quotas, device isolation and reminder leases. These tests do not prove the live Supabase project has applied the migration.
 
-In staging, register and confirm two actual accounts, test recovery email delivery, open separate browser profiles, create/update/delete tasks, check Realtime isolation, and confirm notification delivery on a real phone. Log out and switch accounts on the same device. Validate actual cron authorization and expiration. Deploy only after the live RLS/grant checks pass.
+In staging, authenticate two Google accounts, open separate browser profiles, create/update/delete tasks, check Realtime isolation, and confirm notification delivery on a real phone. Log out and switch accounts on the same device. Validate actual cron authorization and expiration. Deploy only after the live RLS/grant checks pass.
 
 ## Current limits
 
