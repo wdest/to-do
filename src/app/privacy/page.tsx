@@ -29,7 +29,7 @@ export default function PrivacyPage() {
         <p>Məlumatlar hesabına giriş vermək, tapşırıqlarını cihazların arasında sinxronlaşdırmaq, seçdiyin bildirişləri göndərmək və xidməti qorumaq üçün işlənir. Reklam məqsədilə istifadə olunmur və satılmır.</p>
 
         <h2>Saxlanma və silinmə</h2>
-        <p>Aktiv tapşırıqlarını sən silənədək saxlayırıq. Tamamlanmış tapşırıqlar 3 gündən sonra vaxtı keçmiş sayılır və təmizlənir. Brauzerin ayarlarından bildiriş icazəsini ləğv edə bilərsən. Hesabını və ona bağlı məlumatları silmək üçün aşağıdakı emailə yaz.</p>
+        <p>Aktiv tapşırıqlarını sən silənədək saxlayırıq. Tamamlanmış tapşırıqlar 48 saatdan sonra vaxtı keçmiş sayılır və təmizlənir. Brauzerin ayarlarından bildiriş icazəsini ləğv edə bilərsən. Hesabını və ona bağlı məlumatları silmək üçün aşağıdakı emailə yaz.</p>
 
         <h2>Xidmət təminatçıları və təhlükəsizlik</h2>
         <p>Google kimliyini təsdiqləyir; Supabase hesab və tapşırıq məlumatlarını saxlayır; Vercel tətbiqi yayımlayır; brauzerin və əməliyyat sisteminin push xidməti bildirişləri cihazına çatdırır. Tapşırıqlar istifadəçi hesabına ayrılır və giriş qaydaları başqasının məlumatını oxumağı məhdudlaşdırır. İnternet üzərindən ötürülən məlumatların qorunması üçün müvafiq texniki tədbirlər tətbiq olunur.</p>

@@ -3,6 +3,7 @@ import { cronAuthorized } from '@/lib/server/request-security';
 import webpush from 'web-push';
 import { adminClient } from '@/lib/server/auth';
 import { validSubscription } from '@/lib/push-validation';
+import { TASK_LIFETIME_MS } from '@/lib/task-lifecycle';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -19,7 +20,7 @@ export async function GET(request: Request) {
   try {
     const db = adminClient();
     const { error: cleanupError } = await db.from('tasks').delete().eq('is_done', true)
-      .lte('completed_at', new Date(Date.now() - 3 * 86400000).toISOString());
+      .lte('completed_at', new Date(Date.now() - TASK_LIFETIME_MS).toISOString());
     if (cleanupError) throw cleanupError;
     if (!publicKey || !privateKey || !subject) return NextResponse.json({ success: true, cleanup: true, pushConfigured: false });
     webpush.setVapidDetails(subject, publicKey, privateKey);

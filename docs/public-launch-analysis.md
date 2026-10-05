@@ -40,11 +40,11 @@ Hər iki cədvəldə `SELECT/INSERT/UPDATE/DELETE` yalnız `authenticated` rolun
 
 İndekslər: tasks `(user_id, created_at desc, id)`, tamamlanmış işlərin təmizliyi üçün `completed_at` üzrə partial index, vaxtı çatan xatırlatmalar üçün `reminder_at` üzrə partial index, subscriptions `(user_id)`. Qlobal privileged client yalnız cron kimi məhdud server işində; adi istifadəçi sorğuları öz JWT-si ilə işləsin.
 
-## 3 günlük ömür və performans
+## 48 saatlıq ömür və performans
 
 Bu işdə artıq tətbiq olunan dəyişikliklər: hər göldə maksimum 12 dekorativ nilufər; siyahıda səhifə başına 20 tapşırıq; CSS ilə üzmə; memo ilə SVG-lərin təkrar renderinin azaldılması; axtarışın deferred hesablanması. Sayğaclar bütün mövcud işləri əhatə edir, qalan işlər siyahı səhifələrindən əlçatandır.
 
-Tamamlandıqdan 72 saat sonra iş görünüşdən çıxır; ilk gündən sonra şəffaflığı azalır, rənglər 3 günlük dövrə uyğun dəyişir. Açıq səhifə dəqiqədə bir dəfə və yenidən görünən zaman yaşı yeniləyir. Hazırda fiziki təmizlik açıq tətbiqdən başladılır: heç kim tətbiqi açmırsa, bazadan silinmə gecikə bilər. İctimai versiyada bunu qorunan server cron işi etməlidir. Client yalnız solmanı göstərməli və müddəti keçmiş işi gizlətməlidir.
+Tamamlandıqdan 48 saat sonra iş görünüşdən çıxır; ilk 24 saatdan sonra şəffaflığı azalır, yarpaqlar tədricən saralır və 48-ci saatda solmuş qəhvəyi rəng alır. Açıq səhifə dəqiqədə bir dəfə və yenidən görünən zaman yaşı yeniləyir. Fiziki təmizlik qorunan server cron işi ilə aparılır. Client yalnız solmanı göstərməli və müddəti keçmiş işi gizlətməlidir.
 
 Bu məhdudiyyətlər DOM və animasiya yükünü sabit saxlayır; bütün telefonlarda konkret FPS zəmanəti deyil. Server pagination və real cihazlarda profil ölçümü hələ ayrıca işdir.
 
@@ -71,7 +71,7 @@ Spamın xərci artırmaması üçün qeydiyyat qoruması, IP/istifadəçi üzrə
 - Xatırlatma yalnız sahibin cihazlarına gedir; cron sirrsiz sorğu rədd olunur.
 - Paralel cron eyni reminder üçün ikinci iş yaratmır; müvəqqəti göndəriş xətasında retry var.
 - Abunə endpoint-i qeyri-HTTPS/daxili host/key formatı/oversized payload üçün rədd edilir.
-- 72 saat sərhədi, gecə keçidi, timezone, tətbiqin background-dan qayıtması yoxlanılır.
+- 48 saat sərhədi, gecə keçidi, timezone, tətbiqin background-dan qayıtması yoxlanılır.
 - Böyük dataset üçün siyahı səhifələri itkisizdir; mobil DOM və animasiya sayı sabitdir.
 - Köhnə məlumat migration sınağında yalnız seçilmiş sahibə keçir, backup-dan bərpa yolu işləyir.
 

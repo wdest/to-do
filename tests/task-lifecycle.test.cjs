@@ -12,10 +12,10 @@ const { DAY_MS, isTaskExpired, completedAgeDays, lilyOpacity, taskPage } = conte
 const now = Date.parse('2026-10-05T12:00:00Z');
 const task = (age, is_done = true) => ({ is_done, completed_at: new Date(now - age).toISOString() });
 
-test('completed tasks expire exactly at 72 hours', () => {
-  assert.equal(isTaskExpired(task(3 * DAY_MS - 1), now), false);
+test('completed tasks expire exactly at 48 hours', () => {
+  assert.equal(isTaskExpired(task(2 * DAY_MS - 1), now), false);
+  assert.equal(isTaskExpired(task(2 * DAY_MS), now), true);
   assert.equal(isTaskExpired(task(3 * DAY_MS), now), true);
-  assert.equal(isTaskExpired(task(4 * DAY_MS), now), true);
 });
 test('pending, missing and invalid dates never expire', () => {
   assert.equal(isTaskExpired(task(10 * DAY_MS, false), now), false);
@@ -27,13 +27,13 @@ test('timestamps use elapsed time across timezone offsets', () => {
   assert.equal(isTaskExpired({ is_done: true, completed_at: '2026-10-02T16:00:00+04:00' }, now), true);
   assert.equal(completedAgeDays(task(-DAY_MS), now), 0);
 });
-test('leaves fade monotonically after day one and vanish on day three', () => {
+test('leaves fade after 24 hours and vanish at 48 hours', () => {
   assert.equal(lilyOpacity(0), 1);
   assert.equal(lilyOpacity(1), 1);
-  assert.equal(lilyOpacity(2), .5);
+  assert.equal(lilyOpacity(1.5), .5);
+  assert.equal(lilyOpacity(2), 0);
   assert.equal(lilyOpacity(3), 0);
-  assert.equal(lilyOpacity(4), 0);
-  assert.ok(lilyOpacity(2.9) < lilyOpacity(2.5));
+  assert.ok(lilyOpacity(1.9) < lilyOpacity(1.5));
 });
 test('large lists render bounded pages with no skipped items', () => {
   const tasks = Array.from({length: 10000}, (_, id) => id);

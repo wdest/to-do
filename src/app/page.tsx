@@ -94,16 +94,16 @@ const BotanicalLilyPad = memo(function BotanicalLilyPad({ size, isDone, ageDays,
       leafRim = "rgba(167, 243, 208, 0.45)";
       primaryVein = "rgba(209, 250, 229, 0.5)";
       secondaryVein = "rgba(209, 250, 229, 0.25)";
-    } else if (ageDays < 2) {
-      // Day 1-2: Olive chartreuse
+    } else if (ageDays < 1.5) {
+      // Hours 24-36: Olive chartreuse
       leafGradStart = "#84cc16";
       leafGradMid = "#4d7c0f";
       leafGradEnd = "#365314";
       leafRim = "rgba(217, 249, 157, 0.4)";
       primaryVein = "rgba(236, 252, 203, 0.45)";
       secondaryVein = "rgba(236, 252, 203, 0.22)";
-    } else if (ageDays < 2.5) {
-      // Day 2-2.5: Autumn amber
+    } else if (ageDays < 1.75) {
+      // Hours 36-42: Autumn amber
       leafGradStart = "#f59e0b";
       leafGradMid = "#b45309";
       leafGradEnd = "#78350f";
@@ -111,7 +111,7 @@ const BotanicalLilyPad = memo(function BotanicalLilyPad({ size, isDone, ageDays,
       primaryVein = "rgba(254, 243, 199, 0.4)";
       secondaryVein = "rgba(254, 243, 199, 0.2)";
     } else {
-      // Day 2.5-3: Sunken withered brown
+      // Hours 42-48: Sunken withered brown
       leafGradStart = "#78716c";
       leafGradMid = "#44403c";
       leafGradEnd = "#1c1917";
@@ -846,7 +846,7 @@ function TaskWorkspace({ user }: { user: User }) {
             </div>
           </div>
           </div>
-          <p className="lake-caption"><Leaf size={13} /> {completedTasks.length > MAX_POND_LILIES ? `${MAX_POND_LILIES} nilufər göstərilir · Hamısı siyahıdadır. ` : ""}Nilufərlər 3 günə solub yox olur.</p>
+          <p className="lake-caption"><Leaf size={13} /> {completedTasks.length > MAX_POND_LILIES ? `${MAX_POND_LILIES} nilufər göstərilir · Hamısı siyahıdadır. ` : ""}Nilufərlər 48 saata saralıb solur.</p>
         </section>
       </div>
 

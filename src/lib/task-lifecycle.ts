@@ -1,5 +1,5 @@
 export const DAY_MS = 24 * 60 * 60 * 1000;
-export const TASK_LIFETIME_MS = 3 * DAY_MS;
+export const TASK_LIFETIME_MS = 2 * DAY_MS;
 export const MAX_POND_LILIES = 12;
 export const TASK_PAGE_SIZE = 20;
 
@@ -12,12 +12,13 @@ export function completedAgeDays(task: CompletedTask, now: number): number {
 }
 
 export function isTaskExpired(task: CompletedTask, now: number): boolean {
-  return completedAgeDays(task, now) >= 3;
+  return completedAgeDays(task, now) * DAY_MS >= TASK_LIFETIME_MS;
 }
 
 export function lilyOpacity(ageDays: number): number {
-  // Stay bright on day one, then gradually fade until the 72-hour expiry.
-  return Math.max(0, Math.min(1, (3 - ageDays) / 2));
+  // Stay bright for the first 24 hours, then fade until the 48-hour expiry.
+  const lifetimeDays = TASK_LIFETIME_MS / DAY_MS;
+  return Math.max(0, Math.min(1, (lifetimeDays - ageDays) / (lifetimeDays - 1)));
 }
 
 export function taskPage<T>(tasks: T[], requestedPage: number) {
