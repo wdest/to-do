@@ -1,28 +1,34 @@
+import { smallJson } from '@/lib/server/request-security';
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { authenticatedClient } from '@/lib/server/auth';
+import { validSubscription, validPushEndpoint } from '@/lib/push-validation';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://zpydvfcizdugjfnnwxlm.supabase.co';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpweWR2ZmNpemR1Z2pmbm53eGxtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA4Mjc1ODAsImV4cCI6MjEwNjQwMzU4MH0.wHwkCuI3Sw3cxfzqoeSDwqDlCjm-gi3eYaoyhUzT7s8';
+export const dynamic = 'force-dynamic';
 
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
-
-export async function POST(req: Request) {
+async function handle(request: Request, remove: boolean) {
   try {
-    const subscription = await req.json();
-
-    // Store subscription in Supabase
-    const { error } = await supabase
-      .from('push_subscriptions')
-      .insert([{ subscription }]);
-
-    if (error) {
-      console.error('Error saving subscription:', error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    const auth = await authenticatedClient(request);
+    if (!auth) return NextResponse.json({ error: 'Giriş tələb olunur.' }, { status: 401 });
+    let body: unknown;
+    try { body = await smallJson(request); }
+    catch { return NextResponse.json({ error: 'Sorğu etibarsızdır və ya çox böyükdür.' }, { status: 400 }); }
+    if (remove) {
+      const endpoint = body && typeof body === 'object' && 'endpoint' in body ? body.endpoint : null;
+      if (!validPushEndpoint(endpoint)) return NextResponse.json({ error: 'Yanlış endpoint.' }, { status: 400 });
+      const { error } = await auth.db.from('push_subscriptions').delete().eq('user_id', auth.user.id).eq('endpoint', endpoint);
+      if (error) throw error;
+    } else {
+      if (!validSubscription(body)) return NextResponse.json({ error: 'Abunəlik etibarsızdır.' }, { status: 400 });
+      const { error } = await auth.db.from('push_subscriptions').upsert({
+        user_id: auth.user.id, endpoint: body.endpoint,
+        subscription: { endpoint: body.endpoint, keys: body.keys },
+      }, { onConflict: 'endpoint' });
+      if (error) return NextResponse.json({ error: 'Abunəlik saxlanmadı. Cihaz limitini yoxlayın və yenidən cəhd edin.' }, { status: 409 });
     }
-
     return NextResponse.json({ success: true });
-  } catch (err) {
-    console.error('Error processing subscription:', err);
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: 'Əməliyyat tamamlanmadı.' }, { status: 500 });
   }
 }
+export async function POST(request: Request) { return handle(request, false); }
+export async function DELETE(request: Request) { return handle(request, true); }

@@ -3,8 +3,9 @@ self.addEventListener('push', function (event) {
     const data = event.data.json();
     const options = {
       body: data.body,
-      icon: data.icon || '/bell-icon.jpg',
-      badge: data.badge || '/bell-icon.jpg',
+      tag: data.tag || 'nilufer-reminder',
+      icon: data.icon || '/bell-icon.png',
+      badge: data.badge || '/bell-icon.png',
       vibrate: [100, 50, 100],
       data: {
         dateOfArrival: Date.now(),
@@ -18,5 +19,5 @@ self.addEventListener('push', function (event) {
 self.addEventListener('notificationclick', function (event) {
   console.log('Notification click received.');
   event.notification.close();
-  event.waitUntil(clients.openWindow('https://to-do.desttex.com')); // Or wherever the app lives, or just '/' 
+  event.waitUntil(clients.openWindow(self.location.origin + '/'));
 });

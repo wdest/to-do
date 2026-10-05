@@ -1,98 +1,61 @@
 import { NextResponse } from 'next/server';
+import { cronAuthorized } from '@/lib/server/request-security';
 import webpush from 'web-push';
-import { createClient } from '@supabase/supabase-js';
+import { adminClient } from '@/lib/server/auth';
+import { validSubscription } from '@/lib/push-validation';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://zpydvfcizdugjfnnwxlm.supabase.co';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpweWR2ZmNpemR1Z2pmbm53eGxtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA4Mjc1ODAsImV4cCI6MjEwNjQwMzU4MH0.wHwkCuI3Sw3cxfzqoeSDwqDlCjm-gi3eYaoyhUzT7s8';
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
-
-const publicVapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || 'BEIKHqXfgpvYc_wwyVTG2eJpCWkNm8q2AWw_zFppy8PFJDDeq-ZfCvaUn4M02_CFVBfSSt32anUcxO2gBb2Eudk';
-const privateVapidKey = process.env.VAPID_PRIVATE_KEY || 'B1dC5tFtRtj8gRfPDQ5CwN7EmFeAFIyjOSu13W8bVHg';
-
-webpush.setVapidDetails(
-  'mailto:desttex@example.com',
-  publicVapidKey,
-  privateVapidKey
-);
-
-export async function POST(req: Request) {
-  try {
-    const { title, body } = await req.json();
-
-    // Fetch all subscriptions
-    const { data: subs, error } = await supabase
-      .from('push_subscriptions')
-      .select('subscription');
-
-    if (error) throw error;
-
-    if (!subs || subs.length === 0) {
-      return NextResponse.json({ message: 'No subscriptions found.' });
-    }
-
-    const payload = JSON.stringify({
-      title: title || 'Xatırlatma!',
-      body: body || 'Tapşırığınızın vaxtıdır.',
-      icon: '/bell-icon.jpg'
-    });
-
-    const sendPromises = subs.map(sub => 
-      webpush.sendNotification(sub.subscription, payload).catch(e => console.error(e))
-    );
-
-    await Promise.all(sendPromises);
-
-    return NextResponse.json({ success: true, message: 'Notifications sent.' });
-  } catch (err) {
-    console.error('Error sending push:', err);
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
+// This route is exclusively a scheduler endpoint; no public broadcast operation.
+export async function GET(request: Request) {
+  if (!cronAuthorized(request.headers.get('authorization'), process.env.CRON_SECRET)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-}
-
-export async function GET() {
+  const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+  const privateKey = process.env.VAPID_PRIVATE_KEY;
+  const subject = process.env.VAPID_SUBJECT;
   try {
-    const now = new Date().toISOString();
-    
-    const { data: dueTasks, error: taskError } = await supabase
-      .from('tasks')
-      .select('*')
-      .eq('is_done', false)
-      .not('reminder_at', 'is', null)
-      .lte('reminder_at', now);
-      
-    if (taskError) throw taskError;
-    if (!dueTasks || dueTasks.length === 0) {
-       return NextResponse.json({ message: 'Gözləyən xatırlatma yoxdur.' });
-    }
-    
-    const { data: subs, error: subError } = await supabase
-      .from('push_subscriptions')
-      .select('subscription');
-      
-    if (subError) throw subError;
-    
-    if (subs && subs.length > 0) {
-      for (const task of dueTasks) {
-        const payload = JSON.stringify({
-          title: 'Vaxt Tamamdır! ⏰',
-          body: task.title,
-          icon: '/bell-icon.jpg'
-        });
-        
-        const sendPromises = subs.map(sub => 
-          webpush.sendNotification(sub.subscription, payload).catch(e => console.error(e))
-        );
-        await Promise.all(sendPromises);
-        
-        // Clear reminder so it doesn't trigger again
-        await supabase.from('tasks').update({ reminder_at: null }).eq('id', task.id);
+    const db = adminClient();
+    const { error: cleanupError } = await db.from('tasks').delete().eq('is_done', true)
+      .lte('completed_at', new Date(Date.now() - 3 * 86400000).toISOString());
+    if (cleanupError) throw cleanupError;
+    if (!publicKey || !privateKey || !subject) return NextResponse.json({ success: true, cleanup: true, pushConfigured: false });
+    webpush.setVapidDetails(subject, publicKey, privateKey);
+    const { data: jobs, error } = await db.rpc('claim_due_reminders');
+    if (error) throw error;
+    let sent = 0;
+    for (const job of jobs || []) {
+      const { data: subscriptions, error: subscriptionError } = await db.from('push_subscriptions')
+        .select('id, subscription').eq('user_id', job.user_id);
+      if (subscriptionError) throw subscriptionError;
+      let retry = false;
+      let delivered = false;
+      // A generic message protects task text on lock screens and shared devices.
+      for (const entry of subscriptions || []) {
+        if (!validSubscription(entry.subscription)) continue;
+        try {
+          await webpush.sendNotification(entry.subscription, JSON.stringify({
+            title: 'Nilufər', body: 'Bir tapşırığının xatırlatma vaxtıdır. Baxmaq üçün daxil ol.',
+            icon: '/bell-icon.png', tag: `reminder-${job.id}-${job.reminder_at}`,
+          }), { TTL: 300, timeout: 3000 });
+          delivered = true;
+        } catch (error) {
+          const status = (error as { statusCode?: number }).statusCode;
+          if (status === 404 || status === 410) {
+            await db.from('push_subscriptions').delete().eq('id', entry.id).eq('user_id', job.user_id);
+          } else { retry = true; }
+        }
       }
+      const { error: finishError } = await db.rpc('finish_reminder', {
+        task_id: job.id, lease_id: job.reminder_lease, succeeded: delivered && !retry,
+      });
+      if (finishError) throw finishError;
+      if (delivered) sent++;
     }
-    
-    return NextResponse.json({ success: true, message: `Sent ${dueTasks.length} reminders.` });
-  } catch (err) {
-    console.error('Error in push cron:', err);
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
+    return NextResponse.json({ success: true, sent });
+  } catch {
+    return NextResponse.json({ error: 'Reminder processing failed' }, { status: 500 });
   }
 }

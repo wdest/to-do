@@ -1,15 +1,20 @@
 "use client";
 
-import { useEffect, useState, FormEvent, useRef, useMemo } from "react";
+import { useEffect, useState, FormEvent, useRef, useMemo, memo, useDeferredValue } from "react";
+import { completedAgeDays, isTaskExpired, lilyOpacity, MAX_POND_LILIES, taskPage } from "@/lib/task-lifecycle";
+import Link from "next/link";
+import { AuthGate } from "@/components/auth-gate";
+import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import { 
-  Plus, Check, Trash2, X, Lock, 
-  RotateCcw, Calendar, Clock, Bell 
+  Plus, Check, Trash2, X, LogOut,
+  RotateCcw, Calendar, Clock, Bell, Leaf, Search, Sparkles, ChevronRight
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 type Task = {
   id: string;
+  user_id: string;
   title: string;
   is_done: boolean;
   created_at: string;
@@ -20,8 +25,7 @@ type Task = {
 // Lake Geometry Constants
 export const dynamic = "force-dynamic";
 
-const LAKE_INTERNAL_RADIUS = 152;
-const APP_PIN = process.env.NEXT_PUBLIC_APP_PIN || "1234";
+const LAKE_INTERNAL_RADIUS = 120;
 
 // Deterministic hash for natural floating frequency and delay
 function getTaskHash(id: string): number {
@@ -70,8 +74,8 @@ interface LilyPadProps {
   seed: number;
 }
 
-const BotanicalLilyPad = ({ size, isDone, ageDays, title, seed }: LilyPadProps) => {
-  const gradientId = `pad-grad-${isDone ? "done" : "pend"}-${seed % 100}`;
+const BotanicalLilyPad = memo(function BotanicalLilyPad({ size, isDone, ageDays, title, seed }: LilyPadProps) {
+  const gradientId = `pad-grad-${isDone ? "done" : "pend"}-${seed}`;
   
   // Botanical color tones
   let leafGradStart = "#e11d48"; // Vivid crimson
@@ -82,24 +86,24 @@ const BotanicalLilyPad = ({ size, isDone, ageDays, title, seed }: LilyPadProps) 
   let secondaryVein = "rgba(255, 228, 230, 0.22)";
 
   if (isDone) {
-    if (ageDays < 2) {
-      // Day 0-2: Lush blooming emerald
+    if (ageDays < 1) {
+      // Day 0-1: Lush blooming emerald
       leafGradStart = "#10b981";
       leafGradMid = "#047857";
       leafGradEnd = "#064e3b";
       leafRim = "rgba(167, 243, 208, 0.45)";
       primaryVein = "rgba(209, 250, 229, 0.5)";
       secondaryVein = "rgba(209, 250, 229, 0.25)";
-    } else if (ageDays < 4) {
-      // Day 2-4: Olive chartreuse
+    } else if (ageDays < 2) {
+      // Day 1-2: Olive chartreuse
       leafGradStart = "#84cc16";
       leafGradMid = "#4d7c0f";
       leafGradEnd = "#365314";
       leafRim = "rgba(217, 249, 157, 0.4)";
       primaryVein = "rgba(236, 252, 203, 0.45)";
       secondaryVein = "rgba(236, 252, 203, 0.22)";
-    } else if (ageDays < 6) {
-      // Day 4-6: Autumn amber
+    } else if (ageDays < 2.5) {
+      // Day 2-2.5: Autumn amber
       leafGradStart = "#f59e0b";
       leafGradMid = "#b45309";
       leafGradEnd = "#78350f";
@@ -107,7 +111,7 @@ const BotanicalLilyPad = ({ size, isDone, ageDays, title, seed }: LilyPadProps) 
       primaryVein = "rgba(254, 243, 199, 0.4)";
       secondaryVein = "rgba(254, 243, 199, 0.2)";
     } else {
-      // Day 6-7: Sunken withered brown
+      // Day 2.5-3: Sunken withered brown
       leafGradStart = "#78716c";
       leafGradMid = "#44403c";
       leafGradEnd = "#1c1917";
@@ -228,9 +232,13 @@ const BotanicalLilyPad = ({ size, isDone, ageDays, title, seed }: LilyPadProps) 
       </div>
     </div>
   );
-};
+});
 
 export default function Home() {
+  return <AuthGate>{(user) => <TaskWorkspace key={user.id} user={user} />}</AuthGate>;
+}
+
+function TaskWorkspace({ user }: { user: User }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newTaskReminder, setNewTaskReminder] = useState("");
@@ -238,114 +246,145 @@ export default function Home() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [clickRipple, setClickRipple] = useState<{ x: number; y: number } | null>(null);
   
-  // Security PIN
-  const [isUnlocked, setIsUnlocked] = useState(false);
-  const [pin, setPin] = useState("");
-  const [pinError, setPinError] = useState(false);
+  const [filter, setFilter] = useState<"all" | "pending" | "done">("all");
+  const [search, setSearch] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [feedback, setFeedback] = useState("");
+  const [now, setNow] = useState(() => Date.now());
+  const [page, setPage] = useState(0);
+  const deferredSearch = useDeferredValue(search);
+  const dialogRef = useRef<HTMLDivElement>(null);
+
   const [isSubscribed, setIsSubscribed] = useState(false);
-  
+  const [isSaving, setIsSaving] = useState(false);
+  const mutationIds = useRef(new Set<string>());
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+
   const inputRef = useRef<HTMLInputElement>(null);
 
   // STABLE SLOT MAPS: plants stay pinned to their slots and NEVER jump when new tasks arrive!
   const pendingSlotMapRef = useRef<Map<string, number>>(new Map());
   const completedSlotMapRef = useRef<Map<string, number>>(new Map());
 
-  // 1. PIN verification
   useEffect(() => {
-    const unlocked = localStorage.getItem("is_unlocked");
-    if (unlocked === "true" || !process.env.NEXT_PUBLIC_APP_PIN) {
-      setIsUnlocked(true);
-    }
+    if (!isAdding && !selectedTask) return;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const timer = window.setTimeout(() => {
+      (dialogRef.current?.querySelector<HTMLElement>("input") ?? dialogRef.current?.querySelector<HTMLElement>("button"))?.focus();
+    }, 100);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { setIsAdding(false); setSelectedTask(null); }
+      if (event.key === "Tab") {
+        const elements = dialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input, [tabindex="0"]');
+        if (!elements?.length) return;
+        const first = elements[0], last = elements[elements.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      clearTimeout(timer);
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+      previousFocus?.focus();
+    };
+  }, [isAdding, selectedTask]);
+
+  // Queries are scoped for efficiency; database RLS is the security boundary.
+  useEffect(() => {
+    let cancelled = false;
+    let fetching = false;
+    let refreshAgain = false;
+    const fetchTasks = async () => {
+      if (fetching) { refreshAgain = true; return; }
+      fetching = true;
+      const { data, error } = await supabase.from("tasks").select("*")
+        .eq("user_id", user.id).order("created_at", { ascending: false }).limit(500);
+      fetching = false;
+      if (cancelled) return;
+      setIsLoading(false);
+      if (error) setFeedback("Tapşırıqlar yüklənmədi. Yenidən cəhd edin.");
+      else setTasks((data as Task[]).filter((task) => !isTaskExpired(task, Date.now())));
+      if (refreshAgain) { refreshAgain = false; void fetchTasks(); }
+    };
+    void fetchTasks();
+    const channel = supabase.channel(`tasks:${user.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "tasks", filter: `user_id=eq.${user.id}` }, () => { void fetchTasks(); })
+      .subscribe();
+    // DELETE events may lack an owner column: refresh on focus and periodically.
+    const refresh = () => { if (document.visibilityState === "visible") void fetchTasks(); };
+    document.addEventListener("visibilitychange", refresh);
+    const timer = window.setInterval(refresh, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
+      void supabase.removeChannel(channel);
+    };
+  }, [user.id]);
+
+  // Refresh ageing while open, and immediately after returning to the app.
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === "hidden") return;
+      const timestamp = Date.now();
+      setNow(timestamp);
+      setTasks((previous) => previous.some((task) => isTaskExpired(task, timestamp))
+        ? previous.filter((task) => !isTaskExpired(task, timestamp)) : previous);
+      setSelectedTask((task) => task && isTaskExpired(task, timestamp) ? null : task);
+
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 60_000);
+    const onVisibility = () => void refresh();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, []);
 
-  // 2. Fetch Tasks & Supabase Realtime
+  const pushRequest = async (method: "POST" | "DELETE", body: unknown) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session || session.user.id !== user.id) throw new Error("Giriş tələb olunur.");
+    const response = await fetch('/api/push/subscribe', {
+      method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) throw new Error("Bildiriş abunəliyi saxlanmadı.");
+  };
+
   useEffect(() => {
-    if (!isUnlocked) return;
-    
-    const fetchTasks = async () => {
-      const { data } = await supabase
-        .from("tasks")
-        .select("*")
-        .order("created_at", { ascending: false });
+    let cancelled = false;
+    void (async () => {
+      if (!('serviceWorker' in navigator)) return;
+      const registration = await navigator.serviceWorker.getRegistration();
+      const subscription = await registration?.pushManager.getSubscription();
+      if (!subscription) return;
+      const { data } = await supabase.from('push_subscriptions').select('id')
+        .eq('user_id', user.id).eq('endpoint', subscription.endpoint).maybeSingle();
+      if (!cancelled) setIsSubscribed(!!data);
+    })().catch(() => {});
+    return () => { cancelled = true; };
+  }, [user.id]);
 
-      if (data) {
-        let loaded = data as Task[];
-        
-        // 1-Week Decay Auto-cleanup
-        const now = Date.now();
-        const toDeleteIds: string[] = [];
-        loaded = loaded.filter((t) => {
-          if (!t.is_done || !t.completed_at) return true;
-          const ageDays = (now - new Date(t.completed_at).getTime()) / (1000 * 60 * 60 * 24);
-          if (ageDays >= 7) {
-            toDeleteIds.push(t.id);
-            return false;
-          }
-          return true;
-        });
-
-        if (toDeleteIds.length > 0) {
-          supabase.from("tasks").delete().in("id", toDeleteIds).then();
-        }
-
-        setTasks(loaded);
-      }
-    };
-
-    fetchTasks();
-
-    const channel = supabase
-      .channel("realtime:tasks")
-      .on("postgres_changes", { event: "*", schema: "public", table: "tasks" }, (payload) => {
-        if (payload.eventType === "INSERT") {
-          setTasks((prev) => {
-            if (prev.some((t) => t.id === payload.new.id)) return prev;
-            return [payload.new as Task, ...prev];
-          });
-        } else if (payload.eventType === "UPDATE") {
-          setTasks((prev) => prev.map((t) => (t.id === payload.new.id ? (payload.new as Task) : t)));
-        } else if (payload.eventType === "DELETE") {
-          setTasks((prev) => prev.filter((t) => t.id !== payload.old.id));
-        }
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [isUnlocked]);
-
-  // 3. Check existing push subscription
-  useEffect(() => {
-    if (!isUnlocked) return;
-    const checkSubscription = async () => {
-      if ('serviceWorker' in navigator && 'PushManager' in window) {
-        try {
-          const registration = await navigator.serviceWorker.getRegistration();
-          if (registration) {
-            const subscription = await registration.pushManager.getSubscription();
-            if (subscription) {
-              setIsSubscribed(true);
-            }
-          }
-        } catch (e) {
-          console.error("Failed to check subscription", e);
+  const signOut = async () => {
+    try {
+      if ('serviceWorker' in navigator) {
+        const registration = await navigator.serviceWorker.getRegistration();
+        const subscription = await registration?.pushManager.getSubscription();
+        if (subscription) {
+          await subscription.unsubscribe();
+          await pushRequest('DELETE', { endpoint: subscription.endpoint }).catch(() => {});
         }
       }
-    };
-    checkSubscription();
-  }, [isUnlocked]);
-
-  // Handle PIN Unlock
-  const handlePinSubmit = (e: FormEvent) => {
-    e.preventDefault();
-    if (pin === APP_PIN) {
-      localStorage.setItem("is_unlocked", "true");
-      setIsUnlocked(true);
-      setPinError(false);
-    } else {
-      setPinError(true);
-      setPin("");
+    } finally {
+      const { error } = await supabase.auth.signOut({ scope: 'local' });
+      if (error) setFeedback("Çıxış alınmadı. Yenidən cəhd edin.");
     }
   };
 
@@ -364,7 +403,8 @@ export default function Home() {
       }
 
       const registration = await navigator.serviceWorker.register('/sw.js');
-      const publicVapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || 'BEIKHqXfgpvYc_wwyVTG2eJpCWkNm8q2AWw_zFppy8PFJDDeq-ZfCvaUn4M02_CFVBfSSt32anUcxO2gBb2Eudk';
+      const publicVapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+      if (!publicVapidKey) throw new Error('Bildiriş xidməti hələ qurulmayıb.');
 
       // Convert VAPID key to Uint8Array
       const padding = '='.repeat((4 - publicVapidKey.length % 4) % 4);
@@ -378,6 +418,7 @@ export default function Home() {
       let subscription = await registration.pushManager.getSubscription();
       if (subscription) {
         await subscription.unsubscribe();
+        await pushRequest("DELETE", { endpoint: subscription.endpoint }).catch(() => {});
       }
 
       subscription = await registration.pushManager.subscribe({
@@ -385,11 +426,8 @@ export default function Home() {
         applicationServerKey: outputArray
       });
 
-      await fetch('/api/push/subscribe', {
-        method: 'POST',
-        body: JSON.stringify(subscription),
-        headers: { 'Content-Type': 'application/json' }
-      });
+      try { await pushRequest('POST', subscription.toJSON()); }
+      catch (error) { await subscription.unsubscribe(); throw error; }
 
       setIsSubscribed(true);
       alert('Bildirişlər aktivləşdirildi! Tətbiq bağlı olanda da xatırlatma alacaqsınız.');
@@ -402,7 +440,8 @@ export default function Home() {
   // Add Task
   const addTask = async (e?: FormEvent) => {
     if (e) e.preventDefault();
-    if (!newTaskTitle.trim()) return;
+    if (!newTaskTitle.trim() || isSaving) return;
+    setIsSaving(true);
     const title = newTaskTitle.trim();
     const reminder = newTaskReminder.trim() ? new Date(newTaskReminder).toISOString() : null;
     setNewTaskTitle("");
@@ -412,6 +451,7 @@ export default function Home() {
     const tempId = crypto.randomUUID();
     const newTask: Task = {
       id: tempId,
+      user_id: user.id,
       title,
       is_done: false,
       created_at: new Date().toISOString(),
@@ -423,19 +463,27 @@ export default function Home() {
 
     const { data, error } = await supabase
       .from("tasks")
-      .insert([{ title, is_done: false, reminder_at: reminder }])
+      .insert([{ id: tempId, user_id: user.id, title, is_done: false, reminder_at: reminder }])
       .select()
       .single();
 
+    if (!mounted.current) return;
+    setIsSaving(false);
     if (error) {
       setTasks((prev) => prev.filter((t) => t.id !== tempId));
+      setFeedback("Tapşırıq saxlanmadı. 500 tapşırıq limitini və bağlantını yoxlayın.");
+      setNewTaskTitle(title);
+      setNewTaskReminder(newTaskReminder);
+      setIsAdding(true);
     } else if (data) {
-      setTasks((prev) => prev.map((t) => (t.id === tempId ? (data as Task) : t)));
+      setTasks((prev) => [data as Task, ...prev.filter((t) => t.id !== tempId)]);
     }
   };
 
   // Toggle Task Status (Move between lakes)
   const toggleTask = async (task: Task) => {
+    if (mutationIds.current.has(task.id)) return;
+    mutationIds.current.add(task.id);
     const nextDone = !task.is_done;
     const nextCompletedAt = nextDone ? new Date().toISOString() : null;
 
@@ -451,19 +499,35 @@ export default function Home() {
       )
     );
 
-    await supabase
+    const { data, error } = await supabase
       .from("tasks")
-      .update({ is_done: nextDone, completed_at: nextCompletedAt })
-      .eq("id", task.id);
+      .update({ is_done: nextDone })
+      .eq("id", task.id).eq("user_id", user.id).select().single();
+    mutationIds.current.delete(task.id);
+    if (!mounted.current) return;
+    if (data) setTasks((prev) => prev.map((item) => item.id === task.id ? data as Task : item));
+    if (error) {
+      setTasks((prev) => prev.map((item) => item.id === task.id ? task : item));
+      setFeedback("Dəyişiklik yadda saxlanmadı. Yenidən cəhd edin.");
+    }
   };
 
   // Delete Task
   const deleteTask = async (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
+    if (mutationIds.current.has(id)) return;
+    mutationIds.current.add(id);
     pendingSlotMapRef.current.delete(id);
     completedSlotMapRef.current.delete(id);
+    const removedTask = tasks.find((task) => task.id === id);
     setTasks((prev) => prev.filter((t) => t.id !== id));
-    await supabase.from("tasks").delete().eq("id", id);
+    const { error } = await supabase.from("tasks").delete().eq("id", id).eq("user_id", user.id);
+    mutationIds.current.delete(id);
+    if (!mounted.current) return;
+    if (error && removedTask) {
+      setTasks((prev) => prev.some((task) => task.id === id) ? prev : [...prev, removedTask]);
+      setFeedback("Tapşırıq silinmədi. Yenidən cəhd edin.");
+    }
   };
 
   // Direct Click on Left Lake Surface to Create Task
@@ -482,13 +546,16 @@ export default function Home() {
   }, [tasks]);
 
   const completedTasks = useMemo(() => {
-    return tasks.filter((t) => t.is_done);
-  }, [tasks]);
+    return tasks.filter((t) => t.is_done && !isTaskExpired(t, now));
+  }, [tasks, now]);
+
+  const pendingPondTasks = useMemo(() => pendingTasks.slice(0, MAX_POND_LILIES), [pendingTasks]);
+  const completedPondTasks = useMemo(() => completedTasks.slice(0, MAX_POND_LILIES), [completedTasks]);
 
   // STABLE SLOT ALLOCATION: Assign slots in deterministic order so existing plants NEVER jump!
   const pendingTaskSlots = useMemo(() => {
     const map = pendingSlotMapRef.current;
-    const activeIds = new Set(pendingTasks.map((t) => t.id));
+    const activeIds = new Set(pendingPondTasks.map((t) => t.id));
 
     for (const id of Array.from(map.keys())) {
       if (!activeIds.has(id)) map.delete(id);
@@ -496,7 +563,7 @@ export default function Home() {
 
     const usedSlots = new Set<number>(map.values());
 
-    const sorted = [...pendingTasks].sort(
+    const sorted = [...pendingPondTasks].sort(
       (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
     );
 
@@ -509,17 +576,17 @@ export default function Home() {
       }
     }
 
-    return pendingTasks.map((t) => {
+    return pendingPondTasks.map((t) => {
       const slot = map.get(t.id) ?? 0;
-      const coord = getSlotCoordinate(slot, pendingTasks.length);
+      const coord = getSlotCoordinate(slot, pendingPondTasks.length);
       const hash = getTaskHash(t.id);
       return { task: t, slot, coord, hash };
     });
-  }, [pendingTasks]);
+  }, [pendingPondTasks]);
 
   const completedTaskSlots = useMemo(() => {
     const map = completedSlotMapRef.current;
-    const activeIds = new Set(completedTasks.map((t) => t.id));
+    const activeIds = new Set(completedPondTasks.map((t) => t.id));
 
     for (const id of Array.from(map.keys())) {
       if (!activeIds.has(id)) map.delete(id);
@@ -527,7 +594,7 @@ export default function Home() {
 
     const usedSlots = new Set<number>(map.values());
 
-    const sorted = [...completedTasks].sort(
+    const sorted = [...completedPondTasks].sort(
       (a, b) => new Date(a.completed_at || 0).getTime() - new Date(b.completed_at || 0).getTime()
     );
 
@@ -540,51 +607,31 @@ export default function Home() {
       }
     }
 
-    return completedTasks.map((t) => {
+    return completedPondTasks.map((t) => {
       const slot = map.get(t.id) ?? 0;
-      const coord = getSlotCoordinate(slot, completedTasks.length);
+      const coord = getSlotCoordinate(slot, completedPondTasks.length);
       const hash = getTaskHash(t.id);
-      const ageDays = t.completed_at 
-        ? (Date.now() - new Date(t.completed_at).getTime()) / (1000 * 60 * 60 * 24)
-        : 0;
+      const ageDays = completedAgeDays(t, now);
       return { task: t, slot, coord, hash, ageDays };
     });
-  }, [completedTasks]);
+  }, [completedPondTasks, now]);
 
-  const pendingPlantSize = getPlantSize(pendingTasks.length);
-  const completedPlantSize = getPlantSize(completedTasks.length);
+  const pendingPlantSize = getPlantSize(pendingPondTasks.length);
+  const completedPlantSize = getPlantSize(completedPondTasks.length);
 
-  // Locked Screen
-  if (!isUnlocked) {
-    return (
-      <div className="min-h-[100dvh] flex items-center justify-center p-4 bg-[#030712]">
-        <motion.form 
-          initial={{ opacity: 0, scale: 0.94 }} 
-          animate={{ opacity: 1, scale: 1 }}
-          onSubmit={handlePinSubmit} 
-          className="relative overflow-hidden rounded-[2rem] p-8 max-w-xs w-full bg-slate-900/80 border border-white/10 shadow-[0_0_50px_rgba(0,0,0,0.8)] backdrop-blur-xl space-y-6 text-center"
-        >
-          <div className="relative z-10 flex justify-center">
-            <Lock className="text-slate-400" size={28} strokeWidth={1.5} />
-          </div>
-
-          <input
-            type="password" 
-            inputMode="numeric" 
-            pattern="[0-9]*" 
-            maxLength={4}
-            value={pin} 
-            onChange={(e) => setPin(e.target.value)}
-            className={`w-full bg-black/40 border-b-2 ${pinError ? "border-rose-500" : "border-white/20"} px-4 py-3 text-center text-3xl tracking-[0.4em] text-white focus:outline-none focus:border-cyan-400 transition-colors font-light`}
-            autoFocus
-          />
-        </motion.form>
-      </div>
+  const activeTasks = useMemo(() => tasks.filter((task) => !isTaskExpired(task, now)), [tasks, now]);
+  const visibleTasks = useMemo(() => {
+    const query = deferredSearch.trim().toLocaleLowerCase("az");
+    return activeTasks.filter((task) =>
+      (filter === "all" || (filter === "done" ? task.is_done : !task.is_done)) &&
+      task.title.toLocaleLowerCase("az").includes(query)
     );
-  }
+  }, [activeTasks, filter, deferredSearch]);
+  const paginatedTasks = taskPage(visibleTasks, page);
+  const progress = activeTasks.length ? Math.round(completedTasks.length / activeTasks.length * 100) : 0;
 
   return (
-    <main className="min-h-[100dvh] safe-area-pt safe-area-pb p-4 md:p-8 flex flex-col max-w-6xl mx-auto overflow-hidden relative">
+    <main className="app-shell min-h-[100dvh] flex flex-col mx-auto relative">
       
       {/* Ambient Fireflies in Night Forest */}
       <div className="firefly bg-cyan-300 top-[15%] left-[20%] shadow-[0_0_10px_#67e8f9]" />
@@ -593,47 +640,32 @@ export default function Home() {
       <div className="firefly bg-amber-300 top-[65%] right-[25%] shadow-[0_0_10px_#fcd34d]" />
       <div className="firefly bg-cyan-200 bottom-[20%] left-[30%] shadow-[0_0_10px_#a5f3fc]" />
 
-      {/* MINIMAL TOP ACTION BAR */}
-      <header className="flex items-center justify-end mb-4 px-3 z-30 min-h-[48px] gap-3">
-        <motion.button
-          key="push-btn"
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          whileHover={{ scale: 1.08 }}
-          whileTap={{ scale: 0.92 }}
-          onClick={subscribeToPush}
-          className={`p-3 rounded-full border shadow-[0_0_20px_rgba(0,0,0,0.4)] backdrop-blur-md transition-all ${isSubscribed ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300' : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-300'}`}
-          title="Bildirişləri aktivləşdir"
-        >
-          <Bell size={20} />
-        </motion.button>
-
-        <motion.button
-          key="add-btn"
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          whileHover={{ scale: 1.08 }}
-          whileTap={{ scale: 0.92 }}
-          onClick={() => {
-            setIsAdding(true);
-            setTimeout(() => inputRef.current?.focus(), 100);
-          }}
-          className="p-3 bg-white/5 hover:bg-white/10 text-rose-300 rounded-full border border-white/10 shadow-[0_0_20px_rgba(0,0,0,0.4)] backdrop-blur-md transition-all"
-          title="Yeni tapşırıq"
-        >
-          <Plus size={20} />
-        </motion.button>
+      <header className="topbar">
+        <Link href="/" className="brand"><span className="brand-icon"><Leaf size={21} /></span><span>Nilufər<span className="brand-caption">SƏNİN SAKİT MƏKANIN</span></span></Link>
+        <div className="flex items-center gap-3">
+          <button onClick={signOut} className="notification-button" aria-label="Hesabdan çıxış" title={`${user.email ?? "Hesab"} · Çıxış`}><LogOut size={18} /></button>
+          <button onClick={subscribeToPush} className={`notification-button ${isSubscribed ? "text-emerald-300" : "text-slate-300"}`} aria-label={isSubscribed ? "Bildirişlər aktivdir" : "Bildirişləri aktivləşdir"} title={isSubscribed ? "Bildirişlər aktivdir" : "Bildirişləri aktivləşdir"}><Bell size={18} /><span className="hidden sm:inline">{isSubscribed ? "Bildirişlər aktivdir" : "Bildirişlər"}</span>{isSubscribed && <span className="status-dot" />}</button>
+          <button onClick={() => setIsAdding(true)} className="primary-action"><Plus size={18} /><span>Yeni tapşırıq</span></button>
+        </div>
       </header>
 
+      <section className="welcome-section">
+        <div><p className="eyebrow"><span className="status-dot" /> KİÇİK ADDIMLAR, BÖYÜK RAHATLIQ</p><h1>Gününə bir az <span>sakitlik qat.</span></h1><p className="welcome-copy">Fikirlərini buraya qoy. Hər tamamlanan işlə gölün çiçəklənsin.</p></div>
+        <div className="progress-card"><div className="flex items-center justify-between gap-8"><span className="text-sm text-slate-300">Ümumi irəliləyiş</span><span className="text-emerald-300 font-semibold">{progress}%</span></div><div className="progress-track" role="progressbar" aria-label="Tamamlanan tapşırıqlar" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}><div style={{ width: `${progress}%` }} /></div><p>{completedTasks.length} / {activeTasks.length} tapşırıq tamamlanıb</p></div>
+      </section>
+      {feedback && <div role="alert" className="feedback-banner"><span>{feedback}</span><button onClick={() => setFeedback("")} aria-label="Mesajı bağla"><X size={18} /></button></div>}
+
       {/* TWO NATURAL LAKES MAIN STAGE */}
-      <div className="flex-1 flex flex-col md:flex-row gap-8 lg:gap-14 items-center justify-center relative w-full h-full my-auto pb-6">
+      <div className="lake-grid">
         
         {/* LEFT LAKE: MYSTIC CRIMSON POND (Pending Tasks) */}
-        <div className="flex flex-col items-center w-full max-w-[440px]">
+        <section className="lake-card crimson-card">
+          <div className="lake-heading"><div><p className="section-kicker">BİR ADDIMLA BAŞLA</p><h2><span className="lake-dot bg-rose-400" />Gözləyən işlər <span className="count-badge">{pendingTasks.length}</span></h2></div><button className="subtle-icon" onClick={() => setIsAdding(true)} aria-label="Yeni tapşırıq əlavə et"><Plus size={19} /></button></div>
+          <div className="lake-stage">
           {/* Natural Organic Water Reservoir */}
           <div 
             onClick={handleLeftLakeClick}
-            className="w-[330px] h-[330px] sm:w-[380px] sm:h-[380px] md:w-[430px] md:h-[430px] lake-left-shape pond-crimson relative cursor-pointer overflow-hidden transition-all duration-300"
+            className="lake-water lake-left-shape pond-crimson relative cursor-pointer overflow-hidden transition-all duration-300"
             title="Klikləyərək yeni tapşırıq əlavə edin"
           >
             {/* Organic Shoreline Rim with River Pebbles */}
@@ -648,6 +680,7 @@ export default function Home() {
             {/* Natural Gentle Surface Wave */}
             <div className="water-surface-ripple" />
 
+            {pendingTasks.length === 0 && <div className="pond-empty"><span className="empty-symbol"><Plus size={25} strokeWidth={1.3} /></span><strong>{isLoading ? "Gölün hazırlanır…" : "Yeni bir başlanğıc"}</strong><span>{isLoading ? "Tapşırıqlar yüklənir" : "İlk tapşırığını əlavə et"}</span></div>}
             {/* Direct Click Ripple Wave */}
             {clickRipple && (
               <motion.div
@@ -675,6 +708,10 @@ export default function Home() {
                     <motion.div
                       key={task.id}
                       className="absolute left-1/2 top-1/2 lily-pad-wrapper pointer-events-auto cursor-pointer"
+                      role="button"
+                      tabIndex={0}
+                      aria-label={task.title}
+                      onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedTask(task); } }}
                       initial={{ opacity: 0, scale: 0 }}
                       animate={{
                         opacity: 1,
@@ -707,19 +744,7 @@ export default function Home() {
                         }}
                       >
                         {/* Independent Water Buoyancy Floating Bobbing */}
-                        <motion.div
-                          animate={{
-                            y: [-2.5, 2.5, -2.5],
-                            rotate: [-1.5, 1.5, -1.5],
-                          }}
-                          transition={{
-                            duration: floatDuration,
-                            repeat: Infinity,
-                            ease: "easeInOut",
-                            delay: floatDelay,
-                          }}
-                          className="w-full h-full"
-                        >
+                        <div className="lily-float w-full h-full" style={{ animationDuration: `${floatDuration}s`, animationDelay: `-${floatDelay}s` }}>
                           <BotanicalLilyPad
                             size={pendingPlantSize}
                             isDone={false}
@@ -727,7 +752,7 @@ export default function Home() {
                             title={task.title}
                             seed={hash}
                           />
-                        </motion.div>
+                        </div>
                       </div>
                     </motion.div>
                   );
@@ -735,13 +760,17 @@ export default function Home() {
               </AnimatePresence>
             </div>
           </div>
-        </div>
+          </div>
+          <p className="lake-caption"><Plus size={13} /> {pendingTasks.length > MAX_POND_LILIES ? `${MAX_POND_LILIES} nilufər göstərilir · Bütün işlər aşağıdakı siyahıdadır.` : "Gölə toxun, yeni bir iş əlavə et."}</p>
+        </section>
 
         {/* RIGHT LAKE: EMERALD SERENITY POND (Completed Tasks with Decay) */}
-        <div className="flex flex-col items-center w-full max-w-[440px]">
+        <section className="lake-card emerald-card">
+          <div className="lake-heading"><div><p className="section-kicker">HƏR ADDIM DƏYƏRLİDİR</p><h2><span className="lake-dot bg-emerald-400" />Tamamlanan işlər <span className="count-badge">{completedTasks.length}</span></h2></div><Sparkles size={20} className="text-emerald-300/70" /></div>
+          <div className="lake-stage">
           {/* Natural Organic Water Reservoir */}
           <div 
-            className="w-[330px] h-[330px] sm:w-[380px] sm:h-[380px] md:w-[430px] md:h-[430px] lake-right-shape pond-emerald relative overflow-hidden transition-all duration-300"
+            className="lake-water lake-right-shape pond-emerald relative overflow-hidden transition-all duration-300"
           >
             {/* Organic Shoreline Rim with River Pebbles */}
             <div className="lake-shoreline" />
@@ -755,6 +784,7 @@ export default function Home() {
             {/* Natural Gentle Surface Wave */}
             <div className="water-surface-ripple" />
 
+            {completedTasks.length === 0 && <div className="pond-empty"><span className="empty-symbol"><Leaf size={25} strokeWidth={1.3} /></span><strong>{isLoading ? "Gölün hazırlanır…" : "Rahatlığa yer aç"}</strong><span>{isLoading ? "Tapşırıqlar yüklənir" : "Bitirdiyin işlər burada çiçəklənəcək"}</span></div>}
             {/* Completed Floating Water Lilies */}
             <div className="absolute inset-0 z-10 pointer-events-none">
               <AnimatePresence>
@@ -766,10 +796,14 @@ export default function Home() {
                     <motion.div
                       key={task.id}
                       className="absolute left-1/2 top-1/2 lily-pad-wrapper pointer-events-auto cursor-pointer"
+                      role="button"
+                      tabIndex={0}
+                      aria-label={task.title}
+                      onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedTask(task); } }}
                       initial={{ opacity: 0, scale: 0 }}
                       animate={{
-                        opacity: 1,
-                        scale: 1,
+                        opacity: lilyOpacity(ageDays),
+                        scale: 1 - Math.min(ageDays / 3, 1) * 0.15,
                         x: coord.x,
                         y: coord.y,
                       }}
@@ -795,19 +829,7 @@ export default function Home() {
                         }}
                       >
                         {/* Independent Water Buoyancy Floating Bobbing */}
-                        <motion.div
-                          animate={{
-                            y: [-2.5, 2.5, -2.5],
-                            rotate: [-1.5, 1.5, -1.5],
-                          }}
-                          transition={{
-                            duration: floatDuration,
-                            repeat: Infinity,
-                            ease: "easeInOut",
-                            delay: floatDelay,
-                          }}
-                          className="w-full h-full"
-                        >
+                        <div className="lily-float w-full h-full" style={{ animationDuration: `${floatDuration}s`, animationDelay: `-${floatDelay}s` }}>
                           <BotanicalLilyPad
                             size={completedPlantSize}
                             isDone={true}
@@ -815,7 +837,7 @@ export default function Home() {
                             title={task.title}
                             seed={hash}
                           />
-                        </motion.div>
+                        </div>
                       </div>
                     </motion.div>
                   );
@@ -823,9 +845,20 @@ export default function Home() {
               </AnimatePresence>
             </div>
           </div>
-        </div>
-
+          </div>
+          <p className="lake-caption"><Leaf size={13} /> {completedTasks.length > MAX_POND_LILIES ? `${MAX_POND_LILIES} nilufər göstərilir · Hamısı siyahıdadır. ` : ""}Nilufərlər 3 günə solub yox olur.</p>
+        </section>
       </div>
+
+      <section className="task-panel" aria-labelledby="task-list-title">
+        <div className="task-panel-heading"><div><h2 id="task-list-title">Tapşırıqların <span className="count-badge">{activeTasks.length}</span></h2><p>Hər şey öz yerində, fikrin rahat.</p></div><label className="search-box"><Search size={17} /><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(0); }} placeholder="Tapşırıq axtar…" aria-label="Tapşırıq axtar" /></label></div>
+        <div className="filter-tabs" aria-label="Tapşırıq filtri">{([{ id: "all", label: "Hamısı", count: activeTasks.length }, { id: "pending", label: "Gözləyən", count: pendingTasks.length }, { id: "done", label: "Tamamlanan", count: completedTasks.length }] as const).map((tab) => <button key={tab.id} aria-pressed={filter === tab.id} className={filter === tab.id ? "active" : ""} onClick={() => { setFilter(tab.id); setPage(0); }}>{tab.label}<span>{tab.count}</span></button>)}</div>
+        <div className="task-list" aria-live="polite" aria-busy={isLoading}>
+          {isLoading ? <div className="list-empty">Tapşırıqlar yüklənir…</div> : visibleTasks.length ? paginatedTasks.items.map((task) => <div className="task-row" key={task.id}><button className={`task-check ${task.is_done ? "checked" : ""}`} onClick={() => toggleTask(task)} aria-label={task.is_done ? `${task.title}: geri qaytar` : `${task.title}: tamamla`}>{task.is_done && <Check size={15} />}</button><button className="task-detail" onClick={() => setSelectedTask(task)}><span className={task.is_done ? "completed-title" : ""}>{task.title}</span><span className="task-meta">{task.reminder_at ? <><Bell size={12} /> {new Date(task.reminder_at).toLocaleString("az-AZ", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</> : task.is_done ? "Tamamlanıb" : "Sənin növbəti kiçik addımın"}</span></button><button className="subtle-icon" onClick={() => setSelectedTask(task)} aria-label={`${task.title}: ətraflı bax`}><ChevronRight size={17} /></button></div>) : <div className="list-empty"><Leaf size={24} /><h3>{search ? "Uyğun tapşırıq tapılmadı" : filter === "done" ? "Hər şey ilk addımla başlayır" : filter === "pending" ? "Gözləyən işin yoxdur" : "Fikirlərinə bir az yer aç"}</h3><p>{search ? "Başqa sözlə axtarmağa cəhd et." : filter === "done" ? "Tamamladığın tapşırıqları burada görəcəksən." : "Yeni tapşırıq əlavə et, qalanını addım-addım həll et."}</p>{!search && filter !== "done" && <button className="empty-add" onClick={() => setIsAdding(true)}><Plus size={15} /> Tapşırıq əlavə et</button>}</div>}
+        </div>
+        {paginatedTasks.pageCount > 1 && <nav className="task-pagination" aria-label="Tapşırıq səhifələri"><button disabled={paginatedTasks.page === 0} onClick={() => setPage(paginatedTasks.page - 1)}>Əvvəlki</button><span>{paginatedTasks.page + 1} / {paginatedTasks.pageCount} · {visibleTasks.length} tapşırıq</span><button disabled={paginatedTasks.page === paginatedTasks.pageCount - 1} onClick={() => setPage(paginatedTasks.page + 1)}>Növbəti</button></nav>}
+      </section>
+      <footer className="app-footer"><Leaf size={13} /> Tələsmə. Hər kiçik addım bir irəliləyişdir.</footer>
 
       {/* ADD TASK MODAL */}
       <AnimatePresence>
@@ -834,7 +867,11 @@ export default function Home() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4"
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label={isAdding ? "Yeni tapşırıq" : "Tapşırıq haqqında"}
+            className="modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4"
             onClick={() => setIsAdding(false)}
           >
             <motion.form
@@ -856,13 +893,16 @@ export default function Home() {
                   onClick={() => setIsAdding(false)}
                   className="p-1.5 text-slate-400 hover:text-white rounded-full bg-white/5 hover:bg-white/10 transition-colors"
                 >
-                  <X size={18} />
+                  <X size={18} aria-label="Bağla" />
                 </button>
               </div>
 
               {/* Input */}
               <div className="mb-6">
+                <label htmlFor="task-title" className="block text-sm text-slate-300 mb-2">Nə etmək istəyirsən?</label>
                 <input
+                  id="task-title"
+                  maxLength={500}
                   ref={inputRef}
                   type="text"
                   value={newTaskTitle}
@@ -874,7 +914,7 @@ export default function Home() {
 
               {/* Reminder Input */}
               <div className="mb-8">
-                <label className="block text-sm text-slate-400 mb-2 font-light">
+                <label htmlFor="task-reminder" className="block text-sm text-slate-400 mb-2 font-light">
                   Xatırlatma Vaxtı (Seçimlidir)
                 </label>
                 <div className="relative">
@@ -882,6 +922,7 @@ export default function Home() {
                     <Bell size={18} className="text-slate-500" />
                   </div>
                   <input
+                    id="task-reminder"
                     type="datetime-local"
                     value={newTaskReminder}
                     onChange={(e) => setNewTaskReminder(e.target.value)}
@@ -895,7 +936,7 @@ export default function Home() {
               <div className="flex justify-end">
                 <button
                   type="submit"
-                  disabled={!newTaskTitle.trim()}
+                  disabled={!newTaskTitle.trim() || isSaving}
                   className="px-6 py-3 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-2xl shadow-[0_0_20px_rgba(225,29,72,0.3)] transition-all flex items-center gap-2 text-sm font-semibold"
                 >
                   <Check size={18} strokeWidth={2.5} /> Əlavə et
@@ -913,7 +954,11 @@ export default function Home() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4"
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label={isAdding ? "Yeni tapşırıq" : "Tapşırıq haqqında"}
+            className="modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4"
             onClick={() => setSelectedTask(null)}
           >
             <motion.div
@@ -934,7 +979,7 @@ export default function Home() {
                   onClick={() => setSelectedTask(null)}
                   className="p-1.5 text-slate-400 hover:text-white rounded-full bg-white/5 hover:bg-white/10 transition-colors"
                 >
-                  <X size={18} />
+                  <X size={18} aria-label="Bağla" />
                 </button>
               </div>
 

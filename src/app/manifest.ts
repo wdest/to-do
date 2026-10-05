@@ -11,9 +11,16 @@ export default function manifest(): MetadataRoute.Manifest {
     theme_color: '#030712',
     icons: [
       {
-        src: '/bell-icon.jpg',
-        sizes: 'any',
-        type: 'image/x-icon',
+        src: '/bell-icon.png',
+        sizes: '192x192',
+        type: 'image/png',
+        purpose: 'any',
+      },
+      {
+        src: '/bell-icon-512.png',
+        sizes: '512x512',
+        type: 'image/png',
+        purpose: 'any',
       },
     ],
   }
