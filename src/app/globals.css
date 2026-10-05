@@ -275,5 +275,24 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible, input:focu
 .auth-message { font-size: 13px; color: #c3e7d9; line-height: 1.7; }
 .auth-links { display: grid; gap: 10px; margin-top: 22px; font-size: 12px; color: #a7dfcb; }
 .auth-links button { min-height: 36px; }
+.auth-legal-links { display: flex; justify-content: center; gap: 16px; margin-top: 18px; color: #91a09d; font-size: 11px; }
+.auth-legal-links a { text-decoration: underline; text-underline-offset: 3px; }
 .auth-form button:disabled { opacity: .5; cursor: wait; }
+.auth-divider { display: flex; align-items: center; gap: 12px; margin: 16px 0 10px; color: #8c9da8; font-size: 11px; }
+.auth-divider::before, .auth-divider::after { content: ''; height: 1px; flex: 1; background: #ffffff12; }
+.google-auth-button { width: 100%; min-height: 46px; display: flex; align-items: center; justify-content: center; gap: 10px; border: 1px solid #ffffff1b; border-radius: 10px; background: #fff; color: #202124; font-size: 13px; font-weight: 600; transition: background .2s, border-color .2s; }
+.google-auth-button:hover { background: #f5f7fa; }
+.google-auth-button:disabled { opacity: .55; cursor: wait; }
+.legal-page { min-height: 100svh; padding: clamp(20px, 5vw, 64px) 16px; background: radial-gradient(ellipse at 50% 0%, #0c3a30 0%, #09090b 50%); color: #e5e7eb; }
+.legal-card { width: min(100%, 760px); margin: 0 auto; padding: clamp(24px, 5vw, 52px); border: 1px solid #ffffff16; border-radius: 20px; background: #0b1110e8; box-shadow: 0 24px 80px #0008; line-height: 1.75; }
+.legal-card h1 { margin: 8px 0 2px; color: #f0fdf4; font-size: clamp(30px, 7vw, 46px); line-height: 1.15; letter-spacing: -.04em; }
+.legal-card h2 { margin: 30px 0 8px; color: #a7f3d0; font-size: 18px; line-height: 1.35; }
+.legal-card p, .legal-card ul { color: #cbd5d1; font-size: 14px; }
+.legal-card ul { padding-left: 22px; }
+.legal-card li + li { margin-top: 8px; }
+.legal-card a { color: #6ee7b7; text-decoration: underline; text-underline-offset: 3px; }
+.legal-back { display: inline-block; font-size: 13px; text-decoration: none !important; }
+.legal-eyebrow { margin: 28px 0 0 !important; color: #6ee7b7 !important; font-size: 11px !important; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
+.legal-updated { margin: 10px 0 26px !important; color: #94a3a0 !important; font-size: 12px !important; }
+.legal-links { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 38px; padding-top: 20px; border-top: 1px solid #ffffff16; font-size: 13px; }
 @media (max-width: 400px) { .auth-card { padding: 24px; } .topbar { flex-wrap: wrap; } }
